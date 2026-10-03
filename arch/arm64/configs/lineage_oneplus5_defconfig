@@ -732,7 +732,11 @@ CONFIG_CAN_SLCAN=y
 # ------------------------------------------------------------------
 # Standard USB webcam support
 # ------------------------------------------------------------------
+CONFIG_MEDIA_USB_SUPPORT=y
+CONFIG_VIDEO_DEV=y
+CONFIG_VIDEO_V4L2=y
 CONFIG_USB_VIDEO_CLASS=y
+CONFIG_USB_VIDEO_CLASS_INPUT_EVDEV=y
 
 # ------------------------------------------------------------------
 # Modern USB storage bridges / SSDs

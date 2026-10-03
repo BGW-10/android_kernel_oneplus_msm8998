@@ -21,16 +21,20 @@ if [ ! -x "$LLVM_TAG/bin/clang" ]; then
     | tar -xz -C "$LLVM_TAG"
 fi
 
-if [ ! -d "android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9-${AARCH64_GCC_HASH}" ]; then
-  curl -L -o aarch64-gcc.zip \
-    "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9/archive/${AARCH64_GCC_HASH}.zip"
-  unzip -q aarch64-gcc.zip
+if [ ! -x "$TOOLCHAINS/gcc64/bin/aarch64-linux-android-gcc" ]; then
+    rm -rf "$TOOLCHAINS/gcc64"
+
+    git clone --depth 1 --branch lineage-19.1 \
+        "git@github.com:LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git" \
+        "$TOOLCHAINS/gcc64"
 fi
 
-if [ ! -d "android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9-${ARM_GCC_HASH}" ]; then
-  curl -L -o arm-gcc.zip \
-    "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9/archive/${ARM_GCC_HASH}.zip"
-  unzip -q arm-gcc.zip
+if [ ! -x "$TOOLCHAINS/gcc32/bin/arm-linux-androideabi-gcc" ]; then
+    rm -rf "$TOOLCHAINS/gcc32"
+
+    git clone --depth 1 --branch lineage-19.1 \
+        "git@github.com:LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git" \
+        "$TOOLCHAINS/gcc32"
 fi
 
 if [ ! -d "android_prebuilts_build-tools-${BUILD_TOOLS_HASH}" ]; then
