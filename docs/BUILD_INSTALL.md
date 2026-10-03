@@ -27,11 +27,12 @@ Before flashing a custom kernel, the phone should already have:
 - **LineageOS 22.2** installed and booting normally;
 - the firmware required by that LineageOS installation;
 - working USB debugging;
+- **Magisk/root already installed and working**;
 - working `adb` and `fastboot` access from a PC;
 - a known-good LineageOS recovery / installation ZIP available for recovery;
 - enough battery charge to safely perform the flash.
 
-If you use Magisk/root and a Debian chroot, keep a known-good rooted boot image so you can preserve or restore that setup.
+This guide assumes a normal rooted LineageOS installation. It does not assume Debian, a chroot, Klipper, or any other userspace has been installed yet.
 
 Confirm the device:
 
@@ -121,8 +122,8 @@ cd ~/op5-kernel/src
 Clone the prepared branch:
 
 ```bash
-git clone -b printer-host-support \
-  https://github.com/YOUR_GITHUB_USERNAME/android_kernel_oneplus_msm8998.git
+git clone -b usb-serial-enable \
+  https://github.com/BGW-10/android_kernel_oneplus_msm8998
 
 cd android_kernel_oneplus_msm8998
 ```
@@ -215,95 +216,271 @@ grep -E '^CONFIG_(USB_ACM|USB_SERIAL|USB_SERIAL_GENERIC|USB_SERIAL_CH341|USB_SER
 
 ## 7. Back up the currently working boot partition
 
-Do this **before flashing anything**.
+Do this **before creating or flashing a custom boot image**.
 
-From a PC with ADB access:
+The safest template for the new boot image is the boot image that is already working on the phone. That preserves the exact LineageOS boot header, ramdisk, command line, and other metadata for the installed build.
+
+From the build PC:
 
 ```bash
 adb shell su -c 'dd if=/dev/block/bootdevice/by-name/boot of=/sdcard/boot-known-good.img'
 adb pull /sdcard/boot-known-good.img ~/op5-kernel/backups/
 ```
 
-Verify the backup exists and record its checksum:
+Verify the backup and record its checksum:
 
 ```bash
 ls -lh ~/op5-kernel/backups/boot-known-good.img
 sha256sum ~/op5-kernel/backups/boot-known-good.img
 ```
 
-Keep this file somewhere safe. If an experimental kernel fails to boot, it provides a fast recovery path:
+Keep this file somewhere safe. Recovery is simply:
 
 ```bash
 fastboot flash boot ~/op5-kernel/backups/boot-known-good.img
 fastboot reboot
 ```
 
-Also keep the matching LineageOS recovery image and installation ZIP available.
+If the phone is currently rooted with Magisk, this backup is also a copy of the currently working Magisk-patched boot image.
 
 ---
 
-## 8. Package the kernel for the phone
+## 8. Build a complete Android `boot.img`
 
-The standalone build produces the kernel payload:
+The kernel build produces only:
 
 ```text
 out/arch/arm64/boot/Image.gz-dtb
 ```
 
-It does **not** by itself produce a complete Android `boot.img`.
+That file is only the kernel payload. It is **not** a complete Android boot image and must not be flashed directly to the `boot` partition.
 
-Use the packaging flow provided by the fork. A good lean flow should preserve the currently working LineageOS ramdisk and boot metadata and replace only the kernel payload. Common approaches are:
+The simplest safe workflow for an already-rooted LineageOS phone is to use the currently running boot partition as the template. This preserves the matching LineageOS ramdisk, boot header, command line, and the existing Magisk modifications while replacing only the kernel.
 
-- an AnyKernel3 installer ZIP; or
-- unpacking a known-good boot image with `magiskboot`, replacing the kernel, and repacking it.
+All commands in this section run against ordinary rooted Android/LineageOS. No Debian environment is involved.
 
-Do not invent new boot parameters or rebuild the ramdisk from scratch unless the fork specifically requires that.
+### 8.1 Push the newly built kernel to the phone
 
----
-
-## 9. Preserve Magisk/root when applicable
-
-If the resulting `boot.img` is not already Magisk-patched, copy it to the phone:
+From the kernel repository on the PC:
 
 ```bash
-adb push boot.img /sdcard/Download/
+adb push out/arch/arm64/boot/Image.gz-dtb /sdcard/Download/Image.gz-dtb
 ```
 
-In Magisk:
+### 8.2 Open a real Android root shell
+
+Rather than nesting every command inside `adb shell su -c`, enter the phone interactively:
+
+```bash
+adb shell
+```
+
+Then, on the phone:
+
+```sh
+su
+id
+```
+
+The `id` output should show `uid=0(root)`. The remaining commands in this subsection are run from that root Android shell.
+
+### 8.3 Prepare a boot-image workspace
+
+```sh
+rm -rf /data/local/tmp/op5-kernel-boot
+mkdir -p /data/local/tmp/op5-kernel-boot
+cd /data/local/tmp/op5-kernel-boot
+```
+
+Copy the currently booted image into the workspace:
+
+```sh
+dd if=/dev/block/bootdevice/by-name/boot of=original-boot.img
+```
+
+Confirm it exists:
+
+```sh
+ls -lh original-boot.img
+```
+
+### 8.4 Locate and stage `magiskboot`
+
+A typical Magisk installation stores `magiskboot` here:
 
 ```text
-Install
--> Select and Patch a File
--> /sdcard/Download/boot.img
+/data/adb/magisk/magiskboot
 ```
 
-Pull the patched image back:
+Check for it:
+
+```sh
+ls -l /data/adb/magisk/magiskboot
+```
+
+For this workflow, copy the binary into the temporary workspace before executing it. This avoids relying on `/data/adb/magisk` itself being directly executable from the current shell context:
+
+```sh
+cp /data/adb/magisk/magiskboot ./magiskboot
+chmod 0755 ./magiskboot
+```
+
+Verify it runs:
+
+```sh
+./magiskboot --help
+```
+
+If `/data/adb/magisk/magiskboot` does not exist, locate it first:
+
+```sh
+find /data/adb -type f -name magiskboot 2>/dev/null
+```
+
+Use the returned path as the source of the `cp` command above. Do not continue until `./magiskboot --help` runs successfully.
+
+### 8.5 Unpack the currently working boot image
+
+From `/data/local/tmp/op5-kernel-boot`:
+
+```sh
+./magiskboot unpack original-boot.img
+```
+
+Inspect the result:
+
+```sh
+ls -lh
+```
+
+There should be an extracted file named:
+
+```text
+kernel
+```
+
+There will normally also be a ramdisk and possibly other boot-image components.
+
+### 8.6 Replace only the kernel payload
+
+Copy the kernel you built on the PC over the extracted `kernel` file:
+
+```sh
+cp /sdcard/Download/Image.gz-dtb ./kernel
+```
+
+Confirm the replacement:
+
+```sh
+ls -lh kernel /sdcard/Download/Image.gz-dtb
+```
+
+### 8.7 Repack the complete boot image
+
+Still in the same directory:
+
+```sh
+./magiskboot repack original-boot.img custom-boot.img
+```
+
+Verify the result:
+
+```sh
+ls -lh custom-boot.img
+```
+
+Copy it to shared storage so the PC can pull it normally:
+
+```sh
+cp custom-boot.img /sdcard/Download/op5-custom-boot.img
+chmod 0644 /sdcard/Download/op5-custom-boot.img
+```
+
+Exit the root shell and Android shell:
+
+```sh
+exit
+exit
+```
+
+Back on the PC, pull the complete image:
 
 ```bash
-adb pull /sdcard/Download/magisk_patched-*.img ~/op5-kernel/package/
+adb pull /sdcard/Download/op5-custom-boot.img ~/op5-kernel/package/op5-custom-boot.img
+sha256sum ~/op5-kernel/package/op5-custom-boot.img
 ```
 
-Use the exact generated filename when testing or flashing.
+The file you will flash is now:
+
+```text
+~/op5-kernel/package/op5-custom-boot.img
+```
+
+### Why Magisk should remain installed
+
+The template image came from the currently booted, already-Magisk-patched `boot` partition. `magiskboot repack` retains that ramdisk while you replace the kernel payload, so the resulting boot image should retain the existing Magisk setup.
+
+If you intentionally start from a clean, unrooted LineageOS `boot.img` instead, the resulting custom image will also be unrooted unless you patch it with the Magisk app before flashing it.
+
+### Optional structural sanity check
+
+Before flashing, you can push the finished image back to the phone and make sure `magiskboot` can unpack it:
+
+```bash
+adb push ~/op5-kernel/package/op5-custom-boot.img /sdcard/Download/op5-custom-boot-check.img
+adb shell
+```
+
+Then:
+
+```sh
+su
+rm -rf /data/local/tmp/op5-kernel-check
+mkdir -p /data/local/tmp/op5-kernel-check
+cd /data/local/tmp/op5-kernel-check
+cp /sdcard/Download/op5-custom-boot-check.img .
+cp /data/adb/magisk/magiskboot ./magiskboot
+chmod 0755 ./magiskboot
+./magiskboot unpack op5-custom-boot-check.img
+ls -lh
+```
+
+A successful unpack is a useful structural check. It cannot prove that the new kernel will boot, which is why the known-good boot backup from section 7 remains essential.
 
 ---
 
-## 10. Test/flash the new boot image
+## 9. Flash the new boot image
 
-Before flashing, confirm Fastboot sees the phone:
+Reboot the phone into the bootloader:
 
 ```bash
 adb reboot bootloader
 fastboot devices
 ```
 
-If your bootloader/fastboot setup supports temporary booting of the image, that is a useful first test. Otherwise flash the prepared image:
+Flash the complete image you just built:
 
 ```bash
-fastboot flash boot /path/to/your/new-boot.img
+fastboot flash boot ~/op5-kernel/package/op5-custom-boot.img
 fastboot reboot
 ```
 
-Keep the known-good image nearby until the new kernel has completed several normal boots and the required peripherals have been tested.
+Do **not** flash `Image.gz-dtb` directly to the boot partition. The bootloader expects a complete Android boot image.
+
+Keep `boot-known-good.img` available until the custom kernel has completed several successful boots and the required peripherals have been tested.
+
+---
+
+## 10. If the phone does not boot
+
+Return to fastboot mode and restore the known-good image:
+
+```bash
+fastboot flash boot ~/op5-kernel/backups/boot-known-good.img
+fastboot reboot
+```
+
+Because this workflow changes only the boot partition, restoring the old boot image should return the phone to the previous kernel/root state without touching `/data`.
 
 ---
 
@@ -347,22 +524,7 @@ For a `gs_usb` CAN adapter, check the kernel log and network interfaces after co
 
 ---
 
-## 12. Verify access from the Debian chroot
-
-If Android creates the expected device node, enter the Debian chroot and verify that the device is visible there as well:
-
-```bash
-ls -l /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
-ls -l /dev/video* 2>/dev/null
-```
-
-Depending on Android ownership, groups, SELinux policy, and how `/dev` is exposed into the chroot, additional permissions may still be needed even after the kernel driver works. Driver binding and userspace permission are separate problems.
-
-For Klipper, use a stable device identity when possible rather than assuming the device will always remain `/dev/ttyUSB0`.
-
----
-
-## 13. Recovery
+## 12. Recovery
 
 If Android fails to boot or a critical hardware function stops working, return to fastboot and restore the known-good boot image:
 
@@ -371,11 +533,11 @@ fastboot flash boot ~/op5-kernel/backups/boot-known-good.img
 fastboot reboot
 ```
 
-Changing only the boot/kernel image should not erase `/data`, so the Android installation and Debian chroot normally remain intact. A boot backup is still essential because a bad kernel can prevent Android from reaching userspace.
+Changing only the boot/kernel image should not erase `/data`, so the Android installation and user data normally remain intact. A boot backup is still essential because a bad kernel can prevent Android from reaching userspace.
 
 ---
 
-## 14. Troubleshooting
+## 13. Troubleshooting
 
 ### `CONFIG_USB_VIDEO_CLASS did not resolve to =y`
 

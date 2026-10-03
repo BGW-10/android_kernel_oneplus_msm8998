@@ -558,7 +558,11 @@ docs/BUILD_INSTALL.md
 
 The maintainer guide should explain repository creation, config changes, toolchain pinning, scripts, and commit structure.
 
-The user guide should assume those repository changes already exist and should only explain how to clone, build, package, flash, verify, and recover.
+The user guide should assume those repository changes already exist and should only explain how to clone, build, create a complete Android `boot.img`, flash, verify, and recover.
+
+Be explicit that `scripts/build.sh` stops at `out/arch/arm64/boot/Image.gz-dtb`. That output is only the kernel payload and is **not** directly flashable to the Android boot partition. The companion user guide must contain the complete boot-image construction flow: copy the currently working boot partition, unpack it with Magisk `magiskboot`, replace only the unpacked `kernel` file with `Image.gz-dtb`, repack it, pull the resulting `custom-boot.img`, and only then flash it.
+
+For a phone that is already rooted with Magisk, using the currently running boot partition as the repack template preserves the existing Magisk-patched ramdisk. This is preferable to inventing boot-header parameters or rebuilding the ramdisk from scratch.
 
 Commit the documentation separately:
 
