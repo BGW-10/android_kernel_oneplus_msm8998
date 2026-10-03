@@ -704,3 +704,42 @@ CONFIG_CRYPTO_AES_ARM64_CE_BLK=y
 CONFIG_CRYPTO_AES_ARM64_NEON_BLK=y
 CONFIG_CRYPTO_CRC32_ARM64=y
 CONFIG_QMI_ENCDEC=y
+
+# ==================================================================
+# *usb-serial-enable* additions:
+# ==================================================================
+
+# ------------------------------------------------------------------
+# USB serial / Klipper MCU support
+# ------------------------------------------------------------------
+CONFIG_USB_ACM=y
+CONFIG_USB_SERIAL=y
+CONFIG_USB_SERIAL_GENERIC=y
+CONFIG_USB_SERIAL_CH341=y
+CONFIG_USB_SERIAL_CP210X=y
+CONFIG_USB_SERIAL_FTDI_SIO=y
+CONFIG_USB_SERIAL_PL2303=y
+
+# ------------------------------------------------------------------
+# Klipper / SocketCAN support
+# ------------------------------------------------------------------
+CONFIG_CAN=y
+CONFIG_CAN_RAW=y
+CONFIG_CAN_DEV=y
+CONFIG_CAN_GS_USB=y
+CONFIG_CAN_SLCAN=y
+
+# ------------------------------------------------------------------
+# Standard USB webcam support
+# ------------------------------------------------------------------
+CONFIG_USB_VIDEO_CLASS=y
+
+# ------------------------------------------------------------------
+# Modern USB storage bridges / SSDs
+# ------------------------------------------------------------------
+CONFIG_USB_UAS=y
+
+# ------------------------------------------------------------------
+# Optional: allow the phone itself to expose CDC ACM gadget serial
+# ------------------------------------------------------------------
+CONFIG_USB_CONFIGFS_ACM=y
